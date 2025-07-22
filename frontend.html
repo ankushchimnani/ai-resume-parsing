@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bulk Resume Parser</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f7f9fa;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 2em 2.5em 2.5em 2.5em;
+    }
+    h1 {
+      text-align: center;
+      color: #2d3748;
+      margin-bottom: 0.5em;
+    }
+    .desc {
+      text-align: center;
+      color: #4a5568;
+      margin-bottom: 2em;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1em;
+    }
+    input[type="file"] {
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 0.5em;
+      background: #f1f5f9;
+      width: 100%;
+      max-width: 400px;
+    }
+    button[type="submit"], .download-btn {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.7em 1.5em;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 0.5em;
+    }
+    button[type="submit"]:hover, .download-btn:hover {
+      background: #1d4ed8;
+    }
+    .progress {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 1.5em 0 1em 0;
+    }
+    .spinner {
+      border: 4px solid #e5e7eb;
+      border-top: 4px solid #2563eb;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      animation: spin 1s linear infinite;
+      margin-right: 1em;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .results {
+      margin-top: 2em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5em;
+    }
+    .card {
+      background: #f1f5f9;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      padding: 1.2em 1em 1em 1em;
+      word-break: break-word;
+      position: relative;
+    }
+    .card h3 {
+      margin: 0 0 0.5em 0;
+      color: #2563eb;
+      font-size: 1.1em;
+    }
+    .card pre {
+      background: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.97em;
+      color: #374151;
+    }
+    .error {
+      color: #dc2626;
+      font-weight: bold;
+    }
+    .download-btn {
+      display: block;
+      margin: 2em auto 0 auto;
+    }
+    @media (max-width: 600px) {
+      .container { padding: 1em; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Bulk Resume Parser</h1>
+    <div class="desc">Upload <b>multiple PDF resumes</b> at once. Each will be parsed and results shown below. Download all results as a single JSON file.</div>
+    <form id="uploadForm">
+      <input type="file" id="files" name="files" accept="application/pdf" multiple required>
+      <button type="submit">Upload & Parse Resumes</button>
+    </form>
+    <div class="progress" id="progress" style="display:none;">
+      <div class="spinner"></div>
+      <span>Parsing resumes, please wait...</span>
+    </div>
+    <div class="results" id="results"></div>
+    <button class="download-btn" id="downloadBtn" style="display:none;">Download All Results (JSON)</button>
+  </div>
+  <script>
+    const form = document.getElementById('uploadForm');
+    const resultsDiv = document.getElementById('results');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const progressDiv = document.getElementById('progress');
+    let lastResults = null;
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      resultsDiv.innerHTML = '';
+      progressDiv.style.display = 'flex';
+      downloadBtn.style.display = 'none';
+      const files = document.getElementById('files').files;
+      if (!files.length) return;
+      const formData = new FormData();
+      for (const file of files) {
+        formData.append('files', file);
+      }
+      try {
+        const res = await fetch('http://localhost:5000/upload-resumes', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        lastResults = data;
+        progressDiv.style.display = 'none';
+        if (Array.isArray(data)) {
+          resultsDiv.innerHTML = '<div class="grid">' +
+            data.map((result, idx) => {
+              let title = result.filename ? result.filename : `Resume #${idx+1}`;
+              let content = result.error ? `<span class='error'>${result.error}</span>` : `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+              return `<div class="card"><h3>${title}</h3>${content}</div>`;
+            }).join('') + '</div>';
+          downloadBtn.style.display = 'block';
+        } else {
+          resultsDiv.innerHTML = '<span class="error">Unexpected response from server.</span>';
+        }
+      } catch (err) {
+        progressDiv.style.display = 'none';
+        resultsDiv.innerHTML = '<span class="error">Error: ' + err + '</span>';
+      }
+    };
+
+    downloadBtn.onclick = () => {
+      if (!lastResults) return;
+      const blob = new Blob([JSON.stringify(lastResults, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'parsed_resumes.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+  </script>
+</body>
+</html> 
