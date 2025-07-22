@@ -79,6 +79,17 @@
     .results {
       margin-top: 2em;
     }
+    .analytics {
+      margin: 2em 0 1em 0;
+      padding: 1em;
+      background: #e0e7ef;
+      border-radius: 8px;
+      display: flex;
+      gap: 2em;
+      justify-content: center;
+      font-size: 1.1em;
+      color: #1e293b;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -97,6 +108,27 @@
       color: #2563eb;
       font-size: 1.1em;
     }
+    .card .status {
+      font-weight: bold;
+      margin-bottom: 0.5em;
+      display: inline-block;
+      padding: 0.2em 0.7em;
+      border-radius: 5px;
+      font-size: 0.95em;
+    }
+    .card .status.success {
+      background: #d1fae5;
+      color: #047857;
+    }
+    .card .status.error {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    .card .preview {
+      margin: 0.5em 0 0.5em 0;
+      font-size: 0.98em;
+      color: #334155;
+    }
     .card pre {
       background: none;
       padding: 0;
@@ -108,6 +140,45 @@
       color: #dc2626;
       font-weight: bold;
     }
+    .json-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 2em 0 1em 0;
+      background: #f8fafc;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .json-table th, .json-table td {
+      border: 1px solid #e2e8f0;
+      padding: 0.7em 0.5em;
+      text-align: left;
+      vertical-align: top;
+    }
+    .json-table th {
+      background: #e0e7ef;
+      color: #1e293b;
+      font-weight: 600;
+    }
+    .json-table td.json-cell {
+      max-width: 320px;
+      overflow-x: auto;
+      background: #f1f5f9;
+      font-family: 'Fira Mono', 'Consolas', monospace;
+      font-size: 0.97em;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .json-table td.status-success {
+      color: #047857;
+      font-weight: bold;
+      background: #d1fae5;
+    }
+    .json-table td.status-failed {
+      color: #b91c1c;
+      font-weight: bold;
+      background: #fee2e2;
+    }
     .download-btn {
       display: block;
       margin: 2em auto 0 auto;
@@ -115,6 +186,8 @@
     @media (max-width: 600px) {
       .container { padding: 1em; }
       .grid { grid-template-columns: 1fr; }
+      .analytics { flex-direction: column; gap: 0.5em; }
+      .json-table td.json-cell { max-width: 120px; }
     }
   </style>
 </head>
@@ -130,21 +203,74 @@
       <div class="spinner"></div>
       <span>Parsing resumes, please wait...</span>
     </div>
-    <div class="results" id="results"></div>
+    <div class="analytics" id="analytics" style="display:none;"></div>
+    <div id="filterContainer" style="display:none; margin-bottom:1em;"></div>
+    <div id="jsonTableContainer"></div>
     <button class="download-btn" id="downloadBtn" style="display:none;">Download All Results (JSON)</button>
   </div>
   <script>
+    console.log("Script loaded");
     const form = document.getElementById('uploadForm');
-    const resultsDiv = document.getElementById('results');
     const downloadBtn = document.getElementById('downloadBtn');
     const progressDiv = document.getElementById('progress');
+    const analyticsDiv = document.getElementById('analytics');
+    const jsonTableContainer = document.getElementById('jsonTableContainer');
     let lastResults = null;
+    let lastFilter = 'All';
+
+    function getPreview(result) {
+      if (!result || result.error) return '';
+      const name = result.Name || result.name || '';
+      const email = result.Email || result.email || '';
+      const phone = result.Phone || result.phone || '';
+      const location = result.Location || result.location || '';
+      let preview = '';
+      if (name) preview += `<b>Name:</b> ${name}<br>`;
+      if (email) preview += `<b>Email:</b> ${email}<br>`;
+      if (phone) preview += `<b>Phone:</b> ${phone}<br>`;
+      if (location) preview += `<b>Location:</b> ${location}<br>`;
+      return preview ? `<div class="preview">${preview}</div>` : '';
+    }
+
+    function renderFilterDropdown() {
+      return `<label for='statusFilter'><b>Filter by Status:</b></label>\n<select id='statusFilter'>\n  <option value='All'>All</option>\n  <option value='Success'>Success</option>\n  <option value='Failed'>Failed</option>\n</select>`;
+    }
+
+    function renderJsonTable(data, filter = 'All') {
+      let filtered = data;
+      if (filter === 'Success') filtered = data.filter(r => !r.error);
+      if (filter === 'Failed') filtered = data.filter(r => r.error);
+      let table = `<table class="json-table">
+        <thead>
+          <tr>
+            <th>File Name</th>
+            <th>JSON</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>`;
+      filtered.forEach((result, idx) => {
+        const filename = result.filename ? result.filename : `Resume #${idx+1}`;
+        const status = result.error ? 'Failed' : 'Success';
+        const statusClass = result.error ? 'status-failed' : 'status-success';
+        let jsonContent = result.error ? result.error : JSON.stringify(result, null, 2);
+        table += `<tr>
+          <td>${filename}</td>
+          <td class="json-cell"><pre>${jsonContent}</pre></td>
+          <td class="${statusClass}">${status}</td>
+        </tr>`;
+      });
+      table += '</tbody></table>';
+      return table;
+    }
 
     form.onsubmit = async (e) => {
       e.preventDefault();
-      resultsDiv.innerHTML = '';
+      analyticsDiv.style.display = 'none';
       progressDiv.style.display = 'flex';
       downloadBtn.style.display = 'none';
+      jsonTableContainer.innerHTML = '';
+      document.getElementById('filterContainer').style.display = 'none';
       const files = document.getElementById('files').files;
       if (!files.length) return;
       const formData = new FormData();
@@ -158,21 +284,35 @@
         });
         const data = await res.json();
         lastResults = data;
+        lastFilter = 'All';
         progressDiv.style.display = 'none';
         if (Array.isArray(data)) {
-          resultsDiv.innerHTML = '<div class="grid">' +
-            data.map((result, idx) => {
-              let title = result.filename ? result.filename : `Resume #${idx+1}`;
-              let content = result.error ? `<span class='error'>${result.error}</span>` : `<pre>${JSON.stringify(result, null, 2)}</pre>`;
-              return `<div class="card"><h3>${title}</h3>${content}</div>`;
-            }).join('') + '</div>';
+          // Analytics
+          const total = data.length;
+          const success = data.filter(r => !r.error).length;
+          analyticsDiv.innerHTML = `<div><b>Resumes Uploaded:</b> ${total}</div><div><b>Successfully Parsed:</b> ${success}</div>`;
+          analyticsDiv.style.display = 'flex';
+          // Filter dropdown
+          const filterContainer = document.getElementById('filterContainer');
+          filterContainer.innerHTML = renderFilterDropdown();
+          filterContainer.style.display = 'block';
+          document.getElementById('statusFilter').onchange = function() {
+            lastFilter = this.value;
+            jsonTableContainer.innerHTML = renderJsonTable(lastResults, lastFilter);
+          };
+          // JSON Table
+          jsonTableContainer.innerHTML = renderJsonTable(data);
           downloadBtn.style.display = 'block';
         } else {
-          resultsDiv.innerHTML = '<span class="error">Unexpected response from server.</span>';
+          // Show error in analyticsDiv
+          analyticsDiv.innerHTML = '<span class="error">Unexpected response from server.</span>';
+          analyticsDiv.style.display = 'block';
         }
       } catch (err) {
         progressDiv.style.display = 'none';
-        resultsDiv.innerHTML = '<span class="error">Error: ' + err + '</span>';
+        // Show error in analyticsDiv
+        analyticsDiv.innerHTML = '<span class="error">Error: ' + err + '</span>';
+        analyticsDiv.style.display = 'block';
       }
     };
 

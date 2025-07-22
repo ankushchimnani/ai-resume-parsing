@@ -75,7 +75,8 @@ def parse_resume(file_path: str) -> dict:
         parsing_prompt = [
             "You are an expert resume parser.",
             "Extract the following details from the resume provided: Name, Email, Phone, Location, LinkedIn URL, GitHub URL, Portfolio URL, Professional Summary, Technical Skills, Soft Skills, all Professional Experience (including Company, Title, Duration, and Location), all Education (including Degree/Course, Institution, and Duration), and all Projects (including Name, Description, Features, and Tech Stack).",
-            "Return the information as a clean, parsable JSON object. Do not include any text or markdown formatting before or after the JSON.",
+            "After extracting all the specified details, take any remaining text or information from the resume that was not categorized and place it into a field called 'other_details'. It is crucial that no information from the original resume is lost.",
+            "Return the complete information as a single, clean, parsable JSON object. Do not include any text or markdown formatting before or after the JSON.",
             resume_file
         ]
         parsing_response = parsing_model.generate_content(parsing_prompt)
