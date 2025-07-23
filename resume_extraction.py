@@ -10,16 +10,10 @@ load_dotenv()
 # IMPORTANT: Replace "YOUR_API_KEY" with your actual Google AI API key.
 # You can get a key from https://aistudio.google.com/app/apikey
 try:
-    # It's recommended to set your API key as an environment variable
-    # for better security.
-    api_key = os.environ["GEMINI_API_KEY"]
-except KeyError:
-    print("------------------------------------------------------------------")
-    print("ERROR: API key not found.")
-    print("Please set the 'GEMINI_API_KEY' environment variable.")
-    print("You can get a key from https://aistudio.google.com/app/apikey")
-    print("------------------------------------------------------------------")
-    api_key = "YOUR_API_KEY" # Fallback for demonstration
+    import streamlit as st
+    api_key = st.secrets["GEMINI_API_KEY"]
+except (ImportError, AttributeError, KeyError):
+    api_key = os.environ.get("GEMINI_API_KEY")
 
 genai.configure(api_key=api_key)
 
