@@ -73,10 +73,58 @@ def parse_resume(file_path: str) -> dict:
         print("Parsing resume details...")
         parsing_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         parsing_prompt = [
-            "You are an expert resume parser.",
-            "Extract the following details from the resume provided: Name, Email, Phone, Location, LinkedIn URL, GitHub URL, Portfolio URL, Professional Summary, Technical Skills, Soft Skills, all Professional Experience (including Company, Title, Duration, and Location), all Education (including Degree/Course, Institution, and Duration), and all Projects (including Name, Description, Features, and Tech Stack).",
-            "After extracting all the specified details, take any remaining text or information from the resume that was not categorized and place it into a field called 'other_details'. It is crucial that no information from the original resume is lost.",
-            "Return the complete information as a single, clean, parsable JSON object. Do not include any text or markdown formatting before or after the JSON.",
+            "You are a highly-skilled resume parser that strictly follows output formatting rules.",
+            "Assume the current year is 2025.",
+            "Your task is to analyze the provided resume and extract its information precisely into the JSON format defined below. Do not deviate from this schema.",
+            """
+The JSON output MUST conform to the following structure:
+{
+  "personal_details": {
+    "name": "string",
+    "email": "string",
+    "phone": "string",
+    "location": "string"
+  },
+  "professional_presence": {
+    "linkedin_url": "string",
+    "github_url": "string",
+    "portfolio_url": "string"
+  },
+  "summary": "string",
+  "skills": {
+    "technical": ["string", "string", ...],
+    "soft": ["string", "string", ...]
+  },
+  "experience": [
+    {
+      "company": "string",
+      "title": "string",
+      "duration": "string",
+      "location": "string"
+    }
+  ],
+  "education": [
+    {
+      "degree_or_course": "string",
+      "institution": "string",
+      "duration": "string"
+    }
+  ],
+  "projects": [
+    {
+      "name": "string",
+      "description": "string",
+      "features": ["string", "string", ...],
+      "tech_stack": ["string", "string", ...]
+    }
+  ],
+  "is_graduate": "boolean",
+  "other_details": "string"
+}
+""",
+            "Rule for 'is_graduate': Carefully examine all entries in the 'education' section. If at least one entry is a completed undergraduate (e.g., Bachelor's, B.E.) or postgraduate (e.g., Master's, MBA) degree with a graduation end year of 2025 or earlier, then set this to 'true'. The flag should be true even if other degrees are still being pursued. Set it to 'false' only if no university degrees have been completed by the end of 2025.",
+            "Rule for 'other_details': Place any text from the resume that does not fit into any of the fields in the schema above into this string. It is crucial that no information is lost.",
+            "Final Instruction: Respond with ONLY the raw JSON object. Do not include any introductory text, explanations, or markdown formatting like ```json.",
             resume_file
         ]
         parsing_response = parsing_model.generate_content(parsing_prompt)
