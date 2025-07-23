@@ -54,5 +54,15 @@ A tool to parse multiple PDF resumes using Google Gemini API, with a web UI for 
 - `requirements.txt` — Python dependencies
 - `.env.example` — Sample environment file
 
+## Environment Variables
+
+Create a `.env` file in your project root with the following content:
+
+```
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+Replace `your_gemini_api_key_here` with your actual Gemini API key from Google.
+
 ## License
 MIT 

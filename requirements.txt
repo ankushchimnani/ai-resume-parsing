@@ -3,3 +3,5 @@ flask-cors
 google-generativeai
 python-dotenv
 fpdf 
+streamlit
+pandas 
