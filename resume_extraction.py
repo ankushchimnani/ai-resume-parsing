@@ -83,7 +83,7 @@ def parse_resume(file_path: str) -> dict:
 
         # --- 4. Parse Resume Details ---
         print("Parsing resume details...")
-        parsing_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        parsing_model = genai.GenerativeModel(model_name="gemini-2.5-flash")
         parsing_prompt = [
             "You are a highly-skilled resume parser that strictly follows output formatting rules.",
             "Assume the current year is 2025.",
@@ -183,26 +183,7 @@ The JSON output MUST conform to the following structure:
         # --- 5. Parse and Validate Resume ---
         parsed_data = json.loads(cleaned_json_text)
         
-        # --- 6. Extract raw text content for complete backup ---
-        print("Extracting raw text content...")
-        raw_text_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
-        raw_text_prompt = [
-            "Extract ALL text content from this resume document. Include everything:",
-            "- All headers, titles, and section names",
-            "- All bullet points and descriptions",
-            "- All contact information and URLs",
-            "- Any text in headers, footers, or margins",
-            "- All formatting and structure",
-            "Return the complete text content as a single string, preserving the original structure and formatting.",
-            resume_file
-        ]
-        raw_text_response = raw_text_model.generate_content(raw_text_prompt)
-        raw_text_content = raw_text_response.text.strip()
-        
-        # Add raw text to parsed data for complete backup
-        parsed_data["raw_text_content"] = raw_text_content
-        
-        # --- 7. Validate against checklist ---
+        # --- 6. Validate against checklist ---
         print("Validating resume against checklist...")
         validation_results = resume_validator.validate_resume(parsed_data, resume_file.uri)
         

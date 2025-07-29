@@ -7,6 +7,26 @@ st.set_page_config(page_title="Bulk Resume Parser & Validator (Gemini)", layout=
 st.title("Bulk Resume Parser & Validator (Gemini)")
 st.write("Upload multiple PDF resumes, parse them using Gemini, validate against checklist, and download the results as JSON.")
 
+# Performance note
+with st.expander("ℹ️ Performance Information"):
+    st.write("""
+    **Expected Processing Times:**
+    - **1-2 resumes**: 15-30 seconds
+    - **3-5 resumes**: 30-60 seconds  
+    - **5+ resumes**: 1-2 minutes
+    
+    **What's happening:**
+    1. 📤 Uploading PDF to Gemini API
+    2. 🔍 Validating document content
+    3. 📝 Parsing structured data
+    4. ✅ Running validation checks
+    
+    **Tips for faster processing:**
+    - Upload fewer files at once (1-3 at a time)
+    - Ensure PDFs are not too large (< 5MB each)
+    - Check your internet connection
+    """)
+
 # Add a sidebar for validation checklist
 with st.sidebar:
     st.header("Validation Checklist")
@@ -27,17 +47,27 @@ if uploaded_files:
     status_text = st.empty()
     
     for i, file in enumerate(uploaded_files):
-        status_text.text(f"Processing {file.name}...")
+        status_text.text(f"Processing {file.name}... ({i+1}/{len(uploaded_files)})")
         
         # Save to a temp file
         temp_path = os.path.join("/tmp", file.name)
         with open(temp_path, "wb") as f:
             f.write(file.getbuffer())
         
-        result = parse_resume(temp_path)
-        result['filename'] = file.name
-        results.append(result)
-        os.remove(temp_path)
+        try:
+            status_text.text(f"📤 Uploading {file.name} to Gemini...")
+            result = parse_resume(temp_path)
+            result['filename'] = file.name
+            results.append(result)
+            status_text.text(f"✅ Completed {file.name}")
+        except Exception as e:
+            results.append({
+                'filename': file.name,
+                'error': str(e)
+            })
+            status_text.text(f"❌ Failed to process {file.name}")
+        finally:
+            os.remove(temp_path)
         
         # Update progress
         progress_bar.progress((i + 1) / len(uploaded_files))
@@ -108,7 +138,7 @@ if uploaded_files:
                 st.error(r['error'])
             else:
                 # Create tabs for different views
-                tab1, tab2, tab3, tab4 = st.tabs(["Parsed Data", "Validation Results", "Raw Text", "Raw JSON"])
+                tab1, tab2, tab3 = st.tabs(["Parsed Data", "Validation Results", "Raw JSON"])
                 
                 with tab1:
                     st.subheader("Parsed Resume Data")
@@ -225,12 +255,6 @@ if uploaded_files:
                             st.write(f"• {rec}")
                 
                 with tab3:
-                    st.subheader("Raw Text Content")
-                    raw_text = parsed_data.get('raw_text_content', 'No raw text content available')
-                    st.text_area("Complete Resume Text", raw_text, height=400, disabled=True)
-                    st.info("This is the complete text extracted from the resume. Use this to verify that no content was missed during parsing.")
-                
-                with tab4:
                     st.subheader("Raw JSON Data")
                     st.json(r)
 
