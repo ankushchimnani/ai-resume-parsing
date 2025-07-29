@@ -3,19 +3,37 @@ import os
 import json
 import mimetypes
 from dotenv import load_dotenv
+from resume_validator import ResumeValidator
 
 load_dotenv()
 
 # --- Configuration ---
 # IMPORTANT: Replace "YOUR_API_KEY" with your actual Google AI API key.
 # You can get a key from https://aistudio.google.com/app/apikey
-try:
-    import streamlit as st
-    api_key = st.secrets["GEMINI_API_KEY"]
-except (ImportError, AttributeError, KeyError):
-    api_key = os.environ.get("GEMINI_API_KEY")
+api_key = None
+
+# Try to get API key from environment variables first (for local development)
+api_key = os.environ.get("GEMINI_API_KEY")
+
+# If not found in environment, try Streamlit secrets (for Streamlit Cloud)
+if not api_key:
+    try:
+        import streamlit as st
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except (ImportError, AttributeError, KeyError):
+        pass
+
+# If still no API key, show error
+if not api_key:
+    raise ValueError(
+        "GEMINI_API_KEY not found! Please set it in your .env file for local development "
+        "or in Streamlit secrets for cloud deployment."
+    )
 
 genai.configure(api_key=api_key)
+
+# Initialize the resume validator
+resume_validator = ResumeValidator()
 
 def parse_resume(file_path: str) -> dict:
     """
@@ -47,7 +65,7 @@ def parse_resume(file_path: str) -> dict:
 
         # --- 3. Content Validation (Is it a resume?) ---
         print("Validating document content...")
-        validation_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        validation_model = genai.GenerativeModel(model_name="gemini-2.5-pro")
         validation_prompt = [
             "You are an expert document analyzer.",
             "Analyze the content of the provided file and determine if it is a professional resume or CV.",
@@ -70,6 +88,7 @@ def parse_resume(file_path: str) -> dict:
             "You are a highly-skilled resume parser that strictly follows output formatting rules.",
             "Assume the current year is 2025.",
             "Your task is to analyze the provided resume and extract its information precisely into the JSON format defined below. Do not deviate from this schema.",
+            "CRITICAL: Extract ALL information from the resume. Nothing should be missed or omitted.",
             """
 The JSON output MUST conform to the following structure:
 {
@@ -116,8 +135,43 @@ The JSON output MUST conform to the following structure:
   "other_details": "string"
 }
 """,
+            "URL EXTRACTION RULES:",
+            "1. LinkedIn URLs: Look for:",
+            "   - Full URLs: 'linkedin.com/in/username', 'https://linkedin.com/in/username'",
+            "   - Profile identifiers: 'username' (if it looks like a LinkedIn profile ID)",
+            "   - Any text that appears to be a LinkedIn profile identifier",
+            "   - Construct full URL: https://linkedin.com/in/username",
+            "2. GitHub URLs: Look for:",
+            "   - Full URLs: 'github.com/username', 'https://github.com/username'",
+            "   - Usernames that appear to be GitHub handles",
+            "   - Construct full URL: https://github.com/username",
+            "3. Portfolio URLs: Look for:",
+            "   - Personal websites, portfolio links, deployed project URLs",
+            "   - Any URLs that appear to be professional websites",
+            "   - Extract the full URL including https://",
+            "4. URL Construction: If only identifiers/usernames are found, construct the full URL with appropriate domain.",
+            "5. LinkedIn Profile Detection: Look for LinkedIn profile identifiers in contact information, headers, or anywhere in the resume. Common patterns:",
+            "   - Profile IDs like 'sanjana-kumari-050aa6314'",
+            "   - Usernames that appear to be LinkedIn handles",
+            "   - Any text that could be a LinkedIn profile identifier",
+            "   - Always construct the full URL: https://linkedin.com/in/[profile-id]",
+            "",
+            "CONTENT EXTRACTION RULES:",
+            "1. Extract ALL text content from the resume, including headers, footers, and any additional information",
+            "2. If information doesn't fit into the structured fields, place it in 'other_details'",
+            "3. Do not skip any sections, bullet points, or text",
+            "4. Preserve all formatting and content exactly as it appears",
+            "",
             "Rule for 'is_graduate': Carefully examine all entries in the 'education' section. If at least one entry is a completed undergraduate (e.g., Bachelor's, B.E.) or postgraduate (e.g., Master's, MBA) degree with a graduation end year of 2025 or earlier, then set this to 'true'. The flag should be true even if other degrees are still being pursued. Set it to 'false' only if no university degrees have been completed by the end of 2025.",
-            "Rule for 'other_details': Place any text from the resume that does not fit into any of the fields in the schema above into this string. It is crucial that no information is lost.",
+            "",
+            "Rule for 'other_details': Place ANY text from the resume that does not fit into the structured fields above into this string. This includes:",
+            "- Additional sections not covered by the schema",
+            "- Awards, certifications, languages, hobbies, interests",
+            "- Any text that appears in headers, footers, or margins",
+            "- Additional contact information or social media links",
+            "- Any other content that appears on the resume",
+            "It is CRUCIAL that NO information is lost from the original resume.",
+            "",
             "Final Instruction: Respond with ONLY the raw JSON object. Do not include any introductory text, explanations, or markdown formatting like ```json.",
             resume_file
         ]
@@ -126,17 +180,75 @@ The JSON output MUST conform to the following structure:
         # Clean up the response to ensure it's valid JSON
         cleaned_json_text = parsing_response.text.strip().replace("```json", "").replace("```", "")
 
-        # --- 5. Return Parsed Data ---
+        # --- 5. Parse and Validate Resume ---
         parsed_data = json.loads(cleaned_json_text)
+        
+        # --- 6. Extract raw text content for complete backup ---
+        print("Extracting raw text content...")
+        raw_text_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        raw_text_prompt = [
+            "Extract ALL text content from this resume document. Include everything:",
+            "- All headers, titles, and section names",
+            "- All bullet points and descriptions",
+            "- All contact information and URLs",
+            "- Any text in headers, footers, or margins",
+            "- All formatting and structure",
+            "Return the complete text content as a single string, preserving the original structure and formatting.",
+            resume_file
+        ]
+        raw_text_response = raw_text_model.generate_content(raw_text_prompt)
+        raw_text_content = raw_text_response.text.strip()
+        
+        # Add raw text to parsed data for complete backup
+        parsed_data["raw_text_content"] = raw_text_content
+        
+        # --- 7. Validate against checklist ---
+        print("Validating resume against checklist...")
+        validation_results = resume_validator.validate_resume(parsed_data, resume_file.uri)
+        
+        # Add validation results to the response
+        result = {
+            "parsed_data": parsed_data,
+            "validation": validation_results
+        }
         
         # Clean up the file from the server after processing
         genai.delete_file(resume_file.name)
         print("Processing complete.")
         
-        return parsed_data
+        return result
 
     except Exception as e:
         return {"error": f"An unexpected error occurred: {str(e)}"}
+
+def validate_resume_only(file_path: str) -> dict:
+    """
+    Validates a resume against the checklist without parsing it.
+    This is useful when you already have parsed data and just want validation.
+    
+    Args:
+        file_path: The local path to the PDF file.
+        
+    Returns:
+        A dictionary containing only the validation results.
+    """
+    # First parse the resume
+    parse_result = parse_resume(file_path)
+    
+    if "error" in parse_result:
+        return parse_result
+    
+    # Return only the validation results
+    return parse_result.get("validation", {})
+
+def get_validation_checklist() -> str:
+    """
+    Returns the validation checklist document for reference.
+    
+    Returns:
+        String containing the checklist document.
+    """
+    return resume_validator.get_checklist_document()
 
 
 # --- Main Execution ---
